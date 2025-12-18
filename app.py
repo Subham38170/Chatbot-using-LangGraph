@@ -1,76 +1,119 @@
-# 🧠 LangGraph Chatbot with SQLite Persistence
+#Import all the required moduels
+import streamlit as st
+from langgrah_backend import chatbot,retrieve_all_threads
+from langchain_core.messages import HumanMessage
+from IPython.display import Markdown
+from utils import generate_thread_id
 
-LangGraph Chatbot is a **stateful AI chatbot** built with **LangGraph**, **LangChain**, and **Groq**.  
-It leverages a **graph-based architecture** to manage conversation flows and persists chat history using **SQLite**, ensuring that your conversations are saved across sessions.
+#Title of our streamlit app
+st.title('Chatbot')
 
-## 🚀 Features
+#Create all the keys in session_state to store the states while recomposition of UI
 
-*   **Graph-Based Flow:** Nodes and edges define conversation paths from start to end.
-    
-*   **Persistent Storage:** All chat threads and messages are saved in SQLite.
-    
-*   **Multi-Threaded Chat:** Switch between multiple conversation threads seamlessly.
-    
-*   **Streamlit UI:** Interactive, real-time web interface.
-    
-*   **Groq LLM Integration:** Uses `ChatGroq` for AI-generated responses.
-    
-*   **Environment Variable Support:** Secure API key management via `.env`.
-    
+#Chat_history contains all the conversation history of the current thread
+if 'chat_history' not in st.session_state:
+    st.session_state['chat_history'] = []
 
-## 💻 Installation
+#This stores the current thread_id 
+if 'thread_id' not in st.session_state:
+    st.session_state['thread_id'] = generate_thread_id()
 
-1.  Install all dependencies from `requirements.txt`:
-    
+#This contains all the thread_id retrieved from sqlite databse
+if 'chat_threads' not in st.session_state:
+    st.session_state['chat_threads'] = retrieve_all_threads()
 
-`pip install -r requirements.txt`
+#This function creates new thread_id and adds it to chat_threads
+def add_thread(thread_id):
+    if thread_id not in st.session_state['chat_threads']:
+        st.session_state['chat_threads'].append(thread_id)
 
-2.  Create a `.env` file in the project root and add your Groq API key:
-    
+#Used to create new config dictionary with different thread_id for every new convesation
+def get_config():
+    return {'configurable': {'thread_id': st.session_state['thread_id']}}
 
-`GROQ_API_KEY=your_groq_api_key_here`
 
-## 🛠️ Usage
 
-Run the Streamlit app:
 
-`streamlit run app.py`
+#This function is used to reset the chat and start with new chat history
+def reset_chat():
+    new_thread_id = generate_thread_id()
+    add_thread(new_thread_id)
+    st.session_state['thread_id'] = new_thread_id
+    st.session_state['chat_history'] = []
 
-### Features in the UI
 
-*   **New Chat:** Start a fresh conversation.
-    
-*   **Thread Navigation:** Switch between existing chat threads in the sidebar.
-    
-*   **Real-Time Responses:** AI responses stream live as you type.
-    
-*   **Conversation History:** View past messages, preserved across sessions.
-    
+#Load the conversation history using thread_id 
+def load_conversation(thread_id): 
+    messages =  chatbot.get_state({'configurable':{'thread_id':thread_id}}).values['messages']
+    temp_messages =[]
+    for msg in messages:
+        if isinstance(msg,HumanMessage):
+            temp_messages.append({'role':'user','content':msg.content})
+        else:
+            temp_messages.append({'role':'ai','content':msg.content})
+    return temp_messages
 
-## 📁 Project Structure
 
-`├─ app.py                  # Streamlit frontend interface ├─ langgraph_backend.py    # Chatbot backend logic and graph setup ├─ utils.py                # Utility functions (e.g., generate_thread_id) ├─ chatbot.db              # SQLite database for chat history ├─ .env                    # Environment variables (API keys) └─ requirements.txt        # Python dependencies`
 
-## 🔧 Core Components
-
-### Backend
-
-*   **LangGraph StateGraph:** Manages the nodes (`chat_node`) and edges (START → chat\_node → END) for conversation flow.
-    
-*   **Checkpoints:** `SqliteSaver` persists all conversation states.
-    
-*   **Groq LLM:** Generates AI responses using `ChatGroq` and the configured API key.
-    
-*   **TypedDict State:** Tracks messages for each thread.
+st.sidebar.title('LangGraph Chatbot')
+#On every click it creates new thread_id with new chat
+if st.sidebar.button('New Chat'):
+    reset_chat()
     
 
-### Frontend
+st.sidebar.header('My Conversation')
 
-*   **Streamlit Interface:** Displays chat history, handles multiple threads, and streams AI responses in real-time.
-    
-*   **Sidebar Controls:** Start new chats and navigate between threads.
-    
-*   **Chat Input:** Users can type messages and interact with the AI seamlessly.
+#Displays all the thread_ids to load the previous conversation history by clicking on it
+for thread_id in st.session_state['chat_threads']:
+    if st.sidebar.button(str(thread_id), key=f"thread_{thread_id}"):
+
+        st.session_state['thread_id'] = thread_id
+        st.session_state['chat_history'] = load_conversation(thread_id)
+
+
     
 
-##
+#Take the input from user
+user_input = st.chat_input('Type Here')
+
+
+
+#Display all the conversation messages
+for message in st.session_state['chat_history']:
+    with st.chat_message(message['role']):
+        st.markdown(message['content'])
+    
+#This part of code is used to handle the chat with user
+if user_input:
+
+    st.session_state['chat_history'].append({'role':'user','content':user_input})
+
+    with st.chat_message('user'):
+        st.text(user_input)
+    
+    with st.chat_message('ai'):
+    
+        ai_message = st.write_stream(
+            message_chunk.content for message_chunk,metadata in chatbot.stream(
+                {
+                    'messages' : [HumanMessage(content=user_input)]
+                },
+                config=get_config(),
+                stream_mode='messages'
+
+            )
+        )
+        st.session_state['chat_history'].append({'role':'ai','content':ai_message})
+
+
+
+
+
+
+
+
+
+
+
+
+
